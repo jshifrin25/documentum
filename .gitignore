@@ -12,7 +12,7 @@ gsa.crt
 workspace/
 classes/
 .idea
-Plexi.iml
+*.iml
 
 # NetBeans files
 nbproject/
