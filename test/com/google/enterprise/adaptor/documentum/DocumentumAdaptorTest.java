@@ -191,6 +191,11 @@ public class DocumentumAdaptorTest {
       + "user_login_name varchar, user_source varchar, user_ldap_dn varchar, "
       + "r_is_group boolean, user_state int DEFAULT 0)";
 
+  private static final String CREATE_TABLE_DMR_CONTENT = "create table dmr_content "
+          + "(r_object_id varchar unique, parent_id varchar, "
+          + "full_format varchar, "
+          + "rendition int DEFAULT 0)";
+
   private static final String CREATE_TABLE_SYSOBJECT =
       "create table dm_sysobject "
       + "(r_object_id varchar unique, i_chronicle_id varchar, "
@@ -289,7 +294,7 @@ public class DocumentumAdaptorTest {
     Principals.clearCache();
     executeUpdate(CREATE_TABLE_ACL, CREATE_TABLE_AUDITTRAIL,
         CREATE_TABLE_AUDITTRAIL_ACL, CREATE_TABLE_CABINET, CREATE_TABLE_FOLDER,
-        CREATE_TABLE_GROUP, CREATE_TABLE_SYSOBJECT, CREATE_TABLE_USER);
+        CREATE_TABLE_GROUP, CREATE_TABLE_SYSOBJECT, CREATE_TABLE_DMR_CONTENT, CREATE_TABLE_USER);
 
     // Force the default test start path to exist, so we pass init().
     insertFolder(EPOCH_1970, START_PATH_ID, START_PATH);
@@ -1067,7 +1072,7 @@ public class DocumentumAdaptorTest {
                   new FolderMock(rs));
             } else {
               return Proxies.newProxyInstance(IDfSysObject.class,
-                  new SysObjectMock(rs));
+                  new SysObjectMock(rs, new SessionManagerMock().newSession(id.getDocbaseId())));
             }
           }
           throw new DfIdNotFoundException(id);
@@ -1211,8 +1216,9 @@ public class DocumentumAdaptorTest {
       private final Date lastModified;
       private final boolean isVirtualDocument;
       private final Multimap<String, String> attributes;
+      private IDfSession objectSession;
 
-      public SysObjectMock(ResultSet rs) throws SQLException {
+      public SysObjectMock(ResultSet rs, IDfSession mockSession) throws SQLException {
         id = rs.getString("r_object_id");
         chronicleId = rs.getString("i_chronicle_id");
         name = rs.getString("object_name");
@@ -1225,6 +1231,13 @@ public class DocumentumAdaptorTest {
         lastModified = new Date(rs.getTimestamp("r_modify_date").getTime());
         isVirtualDocument = rs.getBoolean("r_is_virtual_doc");
         attributes = readAttributes(id);
+        if (null != mockSession) {
+          objectSession = mockSession;
+         }
+      }
+
+      public SysObjectMock(ResultSet rs) throws SQLException {
+        this(rs, null);
       }
 
       public IDfId getObjectId() {
@@ -1311,6 +1324,10 @@ public class DocumentumAdaptorTest {
       public IDfACL getACL() {
         return Proxies.newProxyInstance(IDfACL.class,
             new AclMock(aclId.toString()));
+      }
+
+      public IDfSession getObjectSession() {
+        return objectSession;
       }
     }
 
@@ -1986,6 +2003,13 @@ public class DocumentumAdaptorTest {
         id, chronicleId, name, type,
         lastModified, path, Joiner.on(",").join(folderIds), DEFAULT_ACL, isVdoc,
         mimeType, content, (content == null) ? null : content.length()));
+  }
+
+  private void insertDmrContent(String id, String parentId, int rendition) throws SQLException {
+    executeUpdate(String.format("insert into dmr_content("
+                    + "r_object_id, parent_id, full_format, rendition) "
+                    + "values('%s', '%s', 'pdfocr', %d)",
+            id, parentId, rendition));
   }
 
   private void setSysObjectACL(String path, String aclId)
@@ -2726,6 +2750,7 @@ public class DocumentumAdaptorTest {
     String content = "Right Document";
     String id = DOCUMENT.pad("ccc");
     insertDocument(new Date(), id, id, path, name, mimeType, content);
+    insertDmrContent(id, path, 6);
 
     // First try a DocId with an unencoded slash in the path.
     ByteArrayOutputStream boas = new ByteArrayOutputStream();

@@ -1,6 +1,12 @@
 <project name="plexi.documentum" default="build" basedir=".">
   <description>Connector for Documentum</description>
   <tstamp/>
+  <taskdef resource="net/sf/antcontrib/antlib.xml">
+      <classpath>
+        <pathelement location="lib/ant-contrib-1.0b2.jar" />
+      </classpath>
+  </taskdef>
+  <property file="build.properties" />
   <property name="src.dir" location="src"/>
   <property name="test.dir" location="test"/>
   <property name="test.class" value="*Test"/>
@@ -38,8 +44,13 @@
     The build.dfc.classpath property must be set in build.properties<!--
     --> or on the command line, and include dfc.jar and the config directory.
   </fail>
-  <property name="compile.java.version" value="7"/>
-  <property name="compile.java.bootclasspath" value="${build.bootclasspath}"/>
+  <property name="compile.java.version" value="8"/>
+  <if>
+    <isset property="build.bootclasspath" />
+    <then>
+      <property name="compile.java.bootclasspath"  value="${build.bootclasspath}"/>
+    </then>
+  </if>
   <!-- The build.bootclasspath property, if set, must match the Java version
        set in compile.java.version. To detect errors in build.bootclasspath,
        set compile.java.newerClassname to a class that was added in
@@ -51,7 +62,7 @@
   <!-- Use add-modules with Java 9 and higher. -->
   <condition property="java.modules"
       value="" else="--add-modules java.xml.bind">
-    <matches string="${ant.java.version}" pattern="^1\.[678]$"/>
+      <matches string="${ant.java.version}" pattern="^1\.[678]$"/>
   </condition>
 
   <path id="adaptor.build.classpath">
@@ -67,12 +78,14 @@
     <fileset dir="${lib.dir}">
       <include name="junit-4.11.jar"/>
       <include name="hamcrest-core-1.3.jar"/>
+      <include name="mockito-all-1.8.3.jar" />
+      <include name="aspectjrt-1.7.1.jar" />
     </fileset>
   </path>
 
   <path id="cobertura.classpath">
     <fileset dir="${cobertura.dir}" erroronmissingdir="false">
-      <include name="cobertura.jar"/>
+      <include name="cobertura-*.jar"/>
       <include name="lib/**/*.jar"/>
     </fileset>
   </path>
@@ -175,12 +188,22 @@ lib/plexi submodule or add the the command line argument
 
   <target name="-discover-version" unless="adaptor.version">
     <exec executable="git" outputproperty="adaptor.version"
+          id="adaptor.version"
       logError="true" failifexecutionfails="false">
       <arg value="describe"/>
       <arg value="--always"/>
     </exec>
     <!-- Set version if git describe failed. -->
-    <property name="adaptor.version" value="unknown-${DSTAMP}"/>
+    <if>
+      <isset property="adapter.version" />
+      <then>
+        <propertyregex property="adaptor.version" input="${adaptor.version}" regexp="^(v(?=\d))?"
+                       replace="-" override="true" />
+      </then>
+      <else>
+        <property name="adaptor.version" value="unknown-${DSTAMP}"/>
+      </else>
+    </if>
   </target>
 
   <target name="dist" description="Generate distribution binaries"
@@ -199,12 +222,10 @@ lib/plexi submodule or add the the command line argument
 
     <!-- Set the file name suffix from the version. Add a leading dash,
          and strip a leading "v" prefix if it is followed by a digit. -->
-    <loadresource property="adaptor.suffix">
-      <propertyresource name="adaptor.version"/>
-      <filterchain>
-          <replaceregex pattern="^(v(?=\d))?" replace="-"/>
-      </filterchain>
-    </loadresource>
+
+
+
+    <propertycopy property="adaptor.suffix" from="adaptor.version" />
 
     <!-- Concatenate dependent JARs together into a comma-delimited list. -->
     <pathconvert pathsep=" " refid="adaptor.run.classpath"

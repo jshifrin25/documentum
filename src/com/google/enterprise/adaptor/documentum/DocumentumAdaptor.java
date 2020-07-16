@@ -98,15 +98,14 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   /** Charset used in generated HTML responses. */
   private static final Charset CHARSET = Charset.forName("UTF-8");
 
-  private static final SimpleDateFormat dateFormat =
-      new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+  private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
   private static final long ONE_DAY_MILLIS = 24 * 60 * 60 * 1000L;
 
   // Initial incremental checkpoints will have timestamps 24 hours in
   // the past, because Documentum timestamps are local server time.
-  private static final String YESTERDAY = dateFormat.format(
-      new Date(System.currentTimeMillis() - ONE_DAY_MILLIS));
+  private static final String YESTERDAY =
+      dateFormat.format(new Date(System.currentTimeMillis() - ONE_DAY_MILLIS));
 
   private static final String DM_CABINET_TAG = "0c";
 
@@ -114,10 +113,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   private final IDfClientX dmClientX;
   private List<String> startPaths;
   private List<String> documentTypes;
-  private CopyOnWriteArrayList<String> validatedStartPaths =
-      new CopyOnWriteArrayList<String>();
-  private CopyOnWriteArrayList<String> validatedDocumentTypes =
-      new CopyOnWriteArrayList<String>();
+  private CopyOnWriteArrayList<String> validatedStartPaths = new CopyOnWriteArrayList<String>();
+  private CopyOnWriteArrayList<String> validatedDocumentTypes = new CopyOnWriteArrayList<String>();
   private boolean indexFolders;
 
   // The object attributes that should not be supplied as metadata.
@@ -140,23 +137,23 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   private String cabinetWhereCondition;
 
   /* Cache to store all types */
-  private final Map<String, IDfType> superTypeCache =
-      new HashMap<String, IDfType>();
+  private final Map<String, IDfType> superTypeCache = new HashMap<String, IDfType>();
 
-  /** "The DQL function that returns the time in the server timezone.*/
+  /** "The DQL function that returns the time in the server timezone. */
   @VisibleForTesting String dateToStringFunction;
 
   @VisibleForTesting AclTraverser aclTraverser = new AclTraverser();
-  @VisibleForTesting ModifiedAclTraverser modifiedAclTraverser =
-      new ModifiedAclTraverser();
+  @VisibleForTesting ModifiedAclTraverser modifiedAclTraverser = new ModifiedAclTraverser();
   @VisibleForTesting GroupTraverser groupTraverser = new GroupTraverser();
   @VisibleForTesting DmWorldTraverser dmWorldTraverser = new DmWorldTraverser();
-  @VisibleForTesting ModifiedDocumentTraverser modifiedDocumentTraverser =
-      new ModifiedDocumentTraverser();
-  @VisibleForTesting ModifiedGroupTraverser modifiedGroupTraverser =
-      new ModifiedGroupTraverser();
-  @VisibleForTesting ModifiedPermissionsTraverser modifiedPermissionsTraverser =
-      new ModifiedPermissionsTraverser();
+
+  @VisibleForTesting
+  ModifiedDocumentTraverser modifiedDocumentTraverser = new ModifiedDocumentTraverser();
+
+  @VisibleForTesting ModifiedGroupTraverser modifiedGroupTraverser = new ModifiedGroupTraverser();
+
+  @VisibleForTesting
+  ModifiedPermissionsTraverser modifiedPermissionsTraverser = new ModifiedPermissionsTraverser();
 
   /** Case-sensitivity of user and group names. */
   public enum CaseSensitivityType {
@@ -179,9 +176,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     AbstractAdaptor.main(new DocumentumAdaptor(), args);
   }
 
-  /**
-   * Remembers last objectId and its modification date for incremental updates.
-   */
+  /** Remembers last objectId and its modification date for incremental updates. */
   static class Checkpoint {
     private final String lastModified;
     private final String objectId;
@@ -233,12 +228,10 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /**
-   * This implementation adds a {@link #getInputStream} method that
-   * shares the buffer with this output stream. The input stream
-   * cannot be obtained until the output stream is closed.
+   * This implementation adds a {@link #getInputStream} method that shares the buffer with this
+   * output stream. The input stream cannot be obtained until the output stream is closed.
    */
-  private static class SharedByteArrayOutputStream
-      extends ByteArrayOutputStream {
+  private static class SharedByteArrayOutputStream extends ByteArrayOutputStream {
     public SharedByteArrayOutputStream() {
       super();
     }
@@ -258,8 +251,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     /**
-     * Gets a <code>ByteArrayInputStream</code> that shares the
-     * output buffer, without copying it.
+     * Gets a <code>ByteArrayInputStream</code> that shares the output buffer, without copying it.
      *
      * @return a <code>ByteArrayInputStream</code>
      * @throws IOException if the output stream is open
@@ -356,35 +348,38 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     config.addKey("documentum.pushLocalGroupsOnly", "false");
     config.addKey("documentum.queryBatchSize", "0");
     config.addKey("documentum.maxHtmlSize", "1000");
-    config.addKey("adaptor.caseSensitivityType",
-        "everything-case-sensitive");
+    config.addKey("adaptor.caseSensitivityType", "everything-case-sensitive");
     config.addKey("documentum.modifiedDocumentsQuery", "");
     // TODO(bmj): Do the system cabinet names need to be localizable?
-    config.addKey("documentum.cabinetWhereCondition", "object_name NOT IN "
-        + "('Integration', 'Resources', 'System', 'Temp', 'Templates') AND "
-        + "object_name NOT IN (SELECT r_install_owner FROM dm_server_config) "
-        + "AND object_name NOT IN (SELECT owner_name FROM dm_docbase_config) "
-        + "AND owner_name <> 'dm_bof_registry'");
-    config.addKey("documentum.excludedAttributes", "a_application_type, "
-        + "a_archive, a_category, a_compound_architecture, a_controlling_app, "
-        + "a_effective_date, a_effective_flag, a_effective_label, "
-        + "a_expiration_date, a_extended_properties, a_full_text, a_is_hidden, "
-        + "a_is_signed, a_is_template, a_last_review_date, a_link_resolved, "
-        + "a_publish_formats, a_retention_date, a_special_app, a_status, "
-        + "a_storage_type, acl_domain, acl_name, group_name, group_permit, "
-        + "i_ancestor_id, i_antecedent_id, i_branch_cnt, i_cabinet_id, "
-        + "i_chronicle_id, i_contents_id, i_direct_dsc, i_folder_id, "
-        + "i_has_folder, i_is_deleted, i_is_reference, i_is_replica, "
-        + "i_latest_flag, i_partition, i_reference_cnt, i_retain_until, "
-        + "i_retainer_id, i_vstamp, language_code, log_entry, owner_permit, "
-        + "r_access_date, r_alias_set_id, r_aspect_name, r_assembled_from_id, "
-        + "r_component_label, r_composite_id, r_composite_label, "
-        + "r_current_state, r_folder_path, r_frozen_flag, r_frzn_assembly_cnt, "
-        + "r_full_content_size, r_has_events, r_has_frzn_assembly, "
-        + "r_immutable_flag, r_is_public, r_is_virtual_doc, r_link_cnt, "
-        + "r_link_high_cnt, r_lock_date, r_lock_machine, r_lock_owner, "
-        + "r_modifier, r_order_no, r_page_cnt, r_policy_id, r_resume_state, "
-        + "r_version_label, resolution_label, world_permit");
+    config.addKey(
+        "documentum.cabinetWhereCondition",
+        "object_name NOT IN "
+            + "('Integration', 'Resources', 'System', 'Temp', 'Templates') AND "
+            + "object_name NOT IN (SELECT r_install_owner FROM dm_server_config) "
+            + "AND object_name NOT IN (SELECT owner_name FROM dm_docbase_config) "
+            + "AND owner_name <> 'dm_bof_registry'");
+    config.addKey(
+        "documentum.excludedAttributes",
+        "a_application_type, "
+            + "a_archive, a_category, a_compound_architecture, a_controlling_app, "
+            + "a_effective_date, a_effective_flag, a_effective_label, "
+            + "a_expiration_date, a_extended_properties, a_full_text, a_is_hidden, "
+            + "a_is_signed, a_is_template, a_last_review_date, a_link_resolved, "
+            + "a_publish_formats, a_retention_date, a_special_app, a_status, "
+            + "a_storage_type, acl_domain, acl_name, group_name, group_permit, "
+            + "i_ancestor_id, i_antecedent_id, i_branch_cnt, i_cabinet_id, "
+            + "i_chronicle_id, i_contents_id, i_direct_dsc, i_folder_id, "
+            + "i_has_folder, i_is_deleted, i_is_reference, i_is_replica, "
+            + "i_latest_flag, i_partition, i_reference_cnt, i_retain_until, "
+            + "i_retainer_id, i_vstamp, language_code, log_entry, owner_permit, "
+            + "r_access_date, r_alias_set_id, r_aspect_name, r_assembled_from_id, "
+            + "r_component_label, r_composite_id, r_composite_label, "
+            + "r_current_state, r_folder_path, r_frozen_flag, r_frzn_assembly_cnt, "
+            + "r_full_content_size, r_has_events, r_has_frzn_assembly, "
+            + "r_immutable_flag, r_is_public, r_is_virtual_doc, r_link_cnt, "
+            + "r_link_high_cnt, r_lock_date, r_lock_machine, r_lock_owner, "
+            + "r_modifier, r_order_no, r_page_cnt, r_policy_id, r_resume_state, "
+            + "r_version_label, resolution_label, world_permit");
   }
 
   @Override
@@ -395,10 +390,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     validateConfig(config);
     docbase = config.getValue("documentum.docbaseName").trim();
     displayUrl = config.getValue("documentum.displayUrlPattern");
-    markAllDocsAsPublic =
-        Boolean.parseBoolean(config.getValue("adaptor.markAllDocsAsPublic"));
-    logger.log(Level.CONFIG, "adaptor.markAllDocsAsPublic: {0}",
-        markAllDocsAsPublic);
+    markAllDocsAsPublic = Boolean.parseBoolean(config.getValue("adaptor.markAllDocsAsPublic"));
+    logger.log(Level.CONFIG, "adaptor.markAllDocsAsPublic: {0}", markAllDocsAsPublic);
 
     // This block of properties should not be used if markAllDocsAsPublic
     // is true, but globalNamespace and localNamespace must not be null,
@@ -409,18 +402,16 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     logger.log(Level.CONFIG, "local namespace: {0}", localNamespace);
     windowsDomain = config.getValue("documentum.windowsDomain").trim();
     logger.log(Level.CONFIG, "documentum.windowsDomain: {0}", windowsDomain);
-    pushLocalGroupsOnly = Boolean.parseBoolean(
-        config.getValue("documentum.pushLocalGroupsOnly"));
-    logger.log(Level.CONFIG, "documentum.pushLocalGroupsOnly: {0}",
-        pushLocalGroupsOnly);
-    if (config.getValue("adaptor.caseSensitivityType").equals(
-            CaseSensitivityType.EVERYTHING_CASE_INSENSITIVE.toString())) {
+    pushLocalGroupsOnly = Boolean.parseBoolean(config.getValue("documentum.pushLocalGroupsOnly"));
+    logger.log(Level.CONFIG, "documentum.pushLocalGroupsOnly: {0}", pushLocalGroupsOnly);
+    if (config
+        .getValue("adaptor.caseSensitivityType")
+        .equals(CaseSensitivityType.EVERYTHING_CASE_INSENSITIVE.toString())) {
       caseSensitivityType = CaseSensitivityType.EVERYTHING_CASE_INSENSITIVE;
     } else {
       caseSensitivityType = CaseSensitivityType.EVERYTHING_CASE_SENSITIVE;
     }
-    logger.log(Level.CONFIG, "adaptor.caseSensitivityType: {0}",
-        caseSensitivityType);
+    logger.log(Level.CONFIG, "adaptor.caseSensitivityType: {0}", caseSensitivityType);
 
     String src = config.getValue("documentum.src");
     logger.log(Level.CONFIG, "documentum.src: {0}", src);
@@ -430,34 +421,28 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     logger.log(Level.CONFIG, "start paths: {0}", startPaths);
     String types = config.getValue("documentum.documentTypes");
     logger.log(Level.CONFIG, "documentum.documentTypes: {0}", types);
-    documentTypes = ImmutableList.copyOf(Splitter.on(',').trimResults()
-        .omitEmptyStrings().split(types));
+    documentTypes =
+        ImmutableList.copyOf(Splitter.on(',').trimResults().omitEmptyStrings().split(types));
     logger.log(Level.CONFIG, "document types: {0}", documentTypes);
-    indexFolders =
-        Boolean.parseBoolean(config.getValue("documentum.indexFolders"));
+    indexFolders = Boolean.parseBoolean(config.getValue("documentum.indexFolders"));
     logger.log(Level.CONFIG, "documentum.indexFolders: {0}", indexFolders);
     queryBatchSize = getPositiveInt(config, "documentum.queryBatchSize");
     logger.log(Level.CONFIG, "documentum.queryBatchSize: {0}", queryBatchSize);
     maxHtmlSize = getPositiveInt(config, "documentum.maxHtmlSize");
     logger.log(Level.CONFIG, "documentum.maxHtmlSize: {0}", maxHtmlSize);
-    modifiedDocumentsQuery =
-        config.getValue("documentum.modifiedDocumentsQuery");
-    logger.log(Level.CONFIG, "documentum.modifiedDocumentsQuery: {0}",
-        modifiedDocumentsQuery);
-    cabinetWhereCondition =
-        config.getValue("documentum.cabinetWhereCondition");
-    logger.log(Level.CONFIG, "documentum.cabinetWhereCondition: {0}", 
-        cabinetWhereCondition);
+    modifiedDocumentsQuery = config.getValue("documentum.modifiedDocumentsQuery");
+    logger.log(Level.CONFIG, "documentum.modifiedDocumentsQuery: {0}", modifiedDocumentsQuery);
+    cabinetWhereCondition = config.getValue("documentum.cabinetWhereCondition");
+    logger.log(Level.CONFIG, "documentum.cabinetWhereCondition: {0}", cabinetWhereCondition);
     String excludedAttrs = config.getValue("documentum.excludedAttributes");
-    excludedAttributes = ImmutableSet.copyOf(Splitter.on(",")
-        .trimResults().omitEmptyStrings().split(excludedAttrs));
-    logger.log(Level.CONFIG, "documentum.excludedAttributes: {0}",
-        excludedAttrs);
+    excludedAttributes =
+        ImmutableSet.copyOf(Splitter.on(",").trimResults().omitEmptyStrings().split(excludedAttrs));
+    logger.log(Level.CONFIG, "documentum.excludedAttributes: {0}", excludedAttrs);
 
     dmSessionManager = initDfc(context);
     IDfSession dmSession = dmSessionManager.getSession(docbase);
-    dateToStringFunction = dmSession.getServerVersion().matches("[456]\\..*")
-        ? "DATETOSTRING" : "DATETOSTRING_LOCAL";
+    dateToStringFunction =
+        dmSession.getServerVersion().matches("[456]\\..*") ? "DATETOSTRING" : "DATETOSTRING_LOCAL";
     try {
       validateStartPaths(dmSession);
       validateDocumentTypes(dmSession);
@@ -468,61 +453,51 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       dmSessionManager.release(dmSession);
     }
     if (validatedStartPaths.isEmpty()) {
-      throw new IllegalStateException(
-         "Failed to validate documentum.src paths.");
+      throw new IllegalStateException("Failed to validate documentum.src paths.");
     }
     context.setPollingIncrementalLister(this);
   }
 
   private static int getPositiveInt(Config config, String propName) {
     try {
-      return Math.max(0,
-          Integer.parseInt(config.getValue(propName).trim()));
+      return Math.max(0, Integer.parseInt(config.getValue(propName).trim()));
     } catch (NumberFormatException e) {
-      throw new InvalidConfigurationException(
-          propName + " must be a positive integer.", e);
+      throw new InvalidConfigurationException(propName + " must be a positive integer.", e);
     }
   }
 
   private static void validateConfig(Config config) {
     if (Strings.isNullOrEmpty(config.getValue("documentum.username"))) {
-      throw new InvalidConfigurationException(
-          "documentum.username is required");
+      throw new InvalidConfigurationException("documentum.username is required");
     }
     if (Strings.isNullOrEmpty(config.getValue("documentum.password"))) {
-      throw new InvalidConfigurationException(
-          "documentum.password is required");
+      throw new InvalidConfigurationException("documentum.password is required");
     }
     if (Strings.isNullOrEmpty(config.getValue("documentum.docbaseName"))) {
-      throw new InvalidConfigurationException(
-          "documentum.docbaseName is required");
+      throw new InvalidConfigurationException("documentum.docbaseName is required");
     }
-    if (Strings.isNullOrEmpty(config
-        .getValue("documentum.displayUrlPattern"))) {
-      throw new InvalidConfigurationException(
-          "documentum.displayUrlPattern is required");
+    if (Strings.isNullOrEmpty(config.getValue("documentum.displayUrlPattern"))) {
+      throw new InvalidConfigurationException("documentum.displayUrlPattern is required");
     } else {
       String pattern = config.getValue("documentum.displayUrlPattern");
       if (!(pattern.contains("{0}") || pattern.contains("{1}"))) {
-        throw new InvalidConfigurationException("documentum.displayUrlPattern "
-            + "must include the object ID as substitution parameter {0} "
-            + "and/or the object path as substitution parameter {1}");
+        throw new InvalidConfigurationException(
+            "documentum.displayUrlPattern "
+                + "must include the object ID as substitution parameter {0} "
+                + "and/or the object path as substitution parameter {1}");
       }
       try {
-        new ValidatedUri(MessageFormat.format(pattern, "0", "/test"))
-            .logUnreachableHost();
+        new ValidatedUri(MessageFormat.format(pattern, "0", "/test")).logUnreachableHost();
       } catch (URISyntaxException e) {
         throw new InvalidConfigurationException(
             "documentum.displayUrlPattern does not produce valid URLs", e);
       }
     }
     if (Strings.isNullOrEmpty(config.getValue("documentum.src"))) {
-      throw new InvalidConfigurationException(
-          "documentum.src is required");
+      throw new InvalidConfigurationException("documentum.src is required");
     }
     if (Strings.isNullOrEmpty(config.getValue("documentum.documentTypes"))) {
-      throw new InvalidConfigurationException(
-          "documentum.documentTypes is required");
+      throw new InvalidConfigurationException("documentum.documentTypes is required");
     }
   }
 
@@ -531,14 +506,12 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     if (separator.isEmpty()) {
       return ImmutableList.of(paths);
     } else {
-      return ImmutableList.copyOf(Splitter.on(separator)
-          .trimResults().omitEmptyStrings().split(paths));
+      return ImmutableList.copyOf(
+          Splitter.on(separator).trimResults().omitEmptyStrings().split(paths));
     }
   }
 
-  /**
-   * Validate start paths and add the valid ones to validatedStartPaths list.
-   */
+  /** Validate start paths and add the valid ones to validatedStartPaths list. */
   // TODO (bmj): Don't catch DfException here. Let it throw out (or use a
   // savedException stack). Handle the exception in init(). It will already
   // be handled correctly in getDocIds().
@@ -552,19 +525,21 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         continue;
       }
       try {
-        IDfSysObject obj =
-            (IDfSysObject) dmSession.getObjectByPath(documentumFolderPath);
+        IDfSysObject obj = (IDfSysObject) dmSession.getObjectByPath(documentumFolderPath);
         if (obj == null) {
-          logger.log(Level.WARNING, "Invalid start path {0}",
-              documentumFolderPath);
+          logger.log(Level.WARNING, "Invalid start path {0}", documentumFolderPath);
         } else {
-          logger.log(Level.CONFIG, "Valid start path {0} id:{1}", new Object[] {
-              documentumFolderPath, obj.getObjectId().toString()});
+          logger.log(
+              Level.CONFIG,
+              "Valid start path {0} id:{1}",
+              new Object[] {documentumFolderPath, obj.getObjectId().toString()});
           validStartPaths.add(documentumFolderPath);
         }
       } catch (DfException e) {
-        logger.log(Level.WARNING, "Error validating start path {0}: {1}",
-            new Object[] { documentumFolderPath, e.getMessage() });
+        logger.log(
+            Level.WARNING,
+            "Error validating start path {0}: {1}",
+            new Object[] {documentumFolderPath, e.getMessage()});
       }
     }
     validatedStartPaths.addAllAbsent(validStartPaths);
@@ -580,33 +555,31 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       try {
         IDfType typeObj = dmSession.getType(typeName);
         if (typeObj.isTypeOf("dm_folder")) {
-          logger.log(Level.WARNING,
-              "Ignoring {0} which is a subtype of dm_folder", typeName);
+          logger.log(Level.WARNING, "Ignoring {0} which is a subtype of dm_folder", typeName);
         } else if (typeObj.isTypeOf("dm_sysobject")) {
           validTypes.add(typeName);
         } else {
           logger.log(Level.WARNING, "Invalid document type {0}", typeName);
         }
       } catch (DfException e) {
-        logger.log(Level.WARNING, "Error validating document type {0}: {1}",
-            new Object[] {typeName, e});
+        logger.log(
+            Level.WARNING, "Error validating document type {0}: {1}", new Object[] {typeName, e});
       }
     }
 
     if (validTypes.isEmpty()) {
-      logger.log(Level.SEVERE,
-          "No valid document types, at least one is required.");
+      logger.log(Level.SEVERE, "No valid document types, at least one is required.");
     }
     validatedDocumentTypes.addAllAbsent(validTypes);
   }
 
-  private void validateModifiedDocumentsQuery(IDfSession session)
-      throws DfException {
+  private void validateModifiedDocumentsQuery(IDfSession session) throws DfException {
     IDfCollection result = null;
     try {
       Checkpoint checkpoint = Checkpoint.incremental();
-      String queryStr = MessageFormat.format(modifiedDocumentsQuery,
-          checkpoint.getLastModified(), checkpoint.getObjectId());
+      String queryStr =
+          MessageFormat.format(
+              modifiedDocumentsQuery, checkpoint.getLastModified(), checkpoint.getObjectId());
       IDfQuery query = dmClientX.getQuery();
       query.setDQL(queryStr);
       result = query.execute(session, IDfQuery.DF_EXECREAD_QUERY);
@@ -617,7 +590,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         result.getString("object_name");
       }
     } catch (DfException | IllegalArgumentException e) {
-      logger.log(Level.WARNING,
+      logger.log(
+          Level.WARNING,
           "Error validating modified documents query {0}: {1}",
           new Object[] {modifiedDocumentsQuery, e});
       // set to empty so that default query will be used.
@@ -652,13 +626,14 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
   }
 
-  /** Get all doc ids from Documentum repository. 
+  /**
+   * Get all doc ids from Documentum repository.
+   *
    * @throws InterruptedException if pusher is interrupted in sending Doc Ids.
    * @throws IOException if error in getting Acl information.
    */
   @Override
-  public void getDocIds(DocIdPusher pusher) throws InterruptedException,
-      IOException {
+  public void getDocIds(DocIdPusher pusher) throws InterruptedException, IOException {
     logger.entering("DocumentumAdaptor", "getDocIds");
 
     IDfSession dmSession = getDfSession();
@@ -672,12 +647,12 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         if (startPath.equals("/")) {
           docIds.addAll(listRootCabinets(dmSession));
         } else {
-          IDfSysObject obj =
-              (IDfSysObject) dmSession.getObjectByPath(startPath);
-          docIds.add(docIdFromPath(
-              startPath.substring(0, startPath.lastIndexOf("/")),
-              obj.getObjectName(),
-              obj.getChronicleId().toString()));
+          IDfSysObject obj = (IDfSysObject) dmSession.getObjectByPath(startPath);
+          docIds.add(
+              docIdFromPath(
+                  startPath.substring(0, startPath.lastIndexOf("/")),
+                  obj.getObjectName(),
+                  obj.getChronicleId().toString()));
         }
       }
       logger.log(Level.FINER, "DocumentumAdaptor DocIds: {0}", docIds);
@@ -713,10 +688,10 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
     // Select r_object_id to allow an object- or row-based query. See
     // "To return results by object ID" in the DQL Reference Manual.
-    String queryStr = MessageFormat.format(
-       "SELECT i_chronicle_id, r_folder_path FROM dm_cabinet"
-       + "{0,choice,0#|0< WHERE {1}}",
-        cabinetWhereCondition.length(), cabinetWhereCondition);
+    String queryStr =
+        MessageFormat.format(
+            "SELECT i_chronicle_id, r_folder_path FROM dm_cabinet" + "{0,choice,0#|0< WHERE {1}}",
+            cabinetWhereCondition.length(), cabinetWhereCondition);
     // Don't use MessageFormat syntax for this log message for testing purposes.
     logger.log(Level.FINER, "Get All Cabinets Query: " + queryStr);
     IDfQuery query = dmClientX.getQuery();
@@ -744,24 +719,27 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /**
-   * A template method for traversing ACLs and groups. Each subclass
-   * must implement methods to create a collection of objects, to fill
-   * the collection from the repository, and to push the collection to
-   * the GSA. Each instance is long-lived and encapsulates a checkpoint.
+   * A template method for traversing ACLs and groups. Each subclass must implement methods to
+   * create a collection of objects, to fill the collection from the repository, and to push the
+   * collection to the GSA. Each instance is long-lived and encapsulates a checkpoint.
    */
   @VisibleForTesting
   abstract class TraverserTemplate {
-    private Sleeper sleeper = new Sleeper() {
-        private final int sleepDuration = 5;
-        private final TimeUnit sleepUnit = TimeUnit.SECONDS;
+    private Sleeper sleeper =
+        new Sleeper() {
+          private final int sleepDuration = 5;
+          private final TimeUnit sleepUnit = TimeUnit.SECONDS;
 
-        @Override public void sleep() throws InterruptedException {
-          sleepUnit.sleep(sleepDuration);
-        }
-        @Override public String toString() {
-          return sleepDuration + " " + sleepUnit;
-        }
-      };
+          @Override
+          public void sleep() throws InterruptedException {
+            sleepUnit.sleep(sleepDuration);
+          }
+
+          @Override
+          public String toString() {
+            return sleepDuration + " " + sleepUnit;
+          }
+        };
 
     private Checkpoint checkpoint;
 
@@ -788,29 +766,29 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
     /**
      * @param checkpoint the object to start traversing from
-     * @return {@code true} if the traversal is complete,
-     *     or {@code false} otherwise
+     * @return {@code true} if the traversal is complete, or {@code false} otherwise
      */
-    protected abstract boolean fillCollection(IDfSession dmSession,
-        Principals principals, Checkpoint checkpoint) throws DfException;
+    protected abstract boolean fillCollection(
+        IDfSession dmSession, Principals principals, Checkpoint checkpoint) throws DfException;
 
     /** @return a checkpoint for the last object pushed */
-    protected abstract Checkpoint pushCollection(DocIdPusher pusher)
-        throws InterruptedException;
+    protected abstract Checkpoint pushCollection(DocIdPusher pusher) throws InterruptedException;
 
     public void run(DocIdPusher pusher, Collection<DfException> savedExceptions)
         throws IOException, InterruptedException {
       boolean isComplete;
       do {
-        logger.log(Level.FINE, "{0} running from checkpoint {1}",
+        logger.log(
+            Level.FINE,
+            "{0} running from checkpoint {1}",
             new Object[] {getClass().getSimpleName(), checkpoint});
         Checkpoint previousCheckpoint = checkpoint;
         DfException caughtException = null;
         createCollection();
         IDfSession dmSession = getDfSession();
         try {
-          Principals principals = new Principals(dmSession, localNamespace,
-              globalNamespace, windowsDomain);
+          Principals principals =
+              new Principals(dmSession, localNamespace, globalNamespace, windowsDomain);
           isComplete = fillCollection(dmSession, principals, checkpoint);
         } catch (DfException e) {
           logger.log(Level.FINER, "Caught exception: " + e);
@@ -827,8 +805,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
             logger.log(Level.FINEST, "Waiting for {0}", sleeper);
             sleeper.sleep();
           } else {
-            logger.log(Level.FINE, "Error with no progress at checkpoint {0}",
-                checkpoint);
+            logger.log(Level.FINE, "Error with no progress at checkpoint {0}", checkpoint);
             savedExceptions.add(caughtException);
             break;
           }
@@ -856,16 +833,14 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected boolean fillCollection(IDfSession dmSession,
-        Principals principals, Checkpoint checkpoint) throws DfException {
-      dctmAcls = new DocumentumAcls(dmClientX, dmSession, principals,
-          caseSensitivityType);
+    protected boolean fillCollection(
+        IDfSession dmSession, Principals principals, Checkpoint checkpoint) throws DfException {
+      dctmAcls = new DocumentumAcls(dmClientX, dmSession, principals, caseSensitivityType);
       return getAcls(checkpoint);
     }
 
     @Override
-    protected Checkpoint pushCollection(DocIdPusher pusher)
-        throws InterruptedException {
+    protected Checkpoint pushCollection(DocIdPusher pusher) throws InterruptedException {
       pusher.pushNamedResources(aclMap);
       return dctmAcls.getCheckpoint();
     }
@@ -877,8 +852,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
   @VisibleForTesting
   class GroupTraverser extends TraverserTemplate {
-    protected ImmutableMap.Builder<GroupPrincipal, Collection<Principal>>
-        groups;
+    protected ImmutableMap.Builder<GroupPrincipal, Collection<Principal>> groups;
     protected Checkpoint groupsCheckpoint;
 
     private final FeedType feedType;
@@ -902,8 +876,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected boolean fillCollection(IDfSession dmSession,
-        Principals principals, Checkpoint checkpoint) throws DfException {
+    protected boolean fillCollection(
+        IDfSession dmSession, Principals principals, Checkpoint checkpoint) throws DfException {
       groupsCheckpoint = checkpoint;
       caughtException = false;
       try {
@@ -915,8 +889,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected Checkpoint pushCollection(DocIdPusher pusher)
-        throws InterruptedException {
+    protected Checkpoint pushCollection(DocIdPusher pusher) throws InterruptedException {
       FeedType feedType;
       if ((queryBatchSize > 0) || caughtException || prevError) {
         feedType = FeedType.INCREMENTAL;
@@ -925,9 +898,12 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       }
 
       Map<GroupPrincipal, Collection<Principal>> groupDefs = groups.build();
-      pusher.pushGroupDefinitions(groupDefs,
+      pusher.pushGroupDefinitions(
+          groupDefs,
           caseSensitivityType == CaseSensitivityType.EVERYTHING_CASE_SENSITIVE,
-          feedType, null, null);
+          feedType,
+          null,
+          null);
       // If we caught an exception, then the next push will also be incomplete,
       // else (modulo batching) we finished sending all the groups, and the
       // next push can be full again.
@@ -938,13 +914,11 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     /**
      * Adds groups and their members to the map builder.
      *
-     * DQL queries that return repeating attributes (in our case,
-     * users_names and groups_names) do not work properly on a DB2
-     * back-end. We use ENABLE(ROW_BASED) to explode the repeating
+     * <p>DQL queries that return repeating attributes (in our case, users_names and groups_names)
+     * do not work properly on a DB2 back-end. We use ENABLE(ROW_BASED) to explode the repeating
      * attributes across several rows.
      */
-    protected boolean getGroups(IDfSession session, Principals principals)
-        throws DfException {
+    protected boolean getGroups(IDfSession session, Principals principals) throws DfException {
       String startObjectId = groupsCheckpoint.getObjectId();
       String stopObjectId = null;
 
@@ -957,8 +931,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         logger.log(Level.FINER, "Between Groups Query: {0}", queryStr);
         IDfQuery query = dmClientX.getQuery();
         query.setDQL(queryStr);
-        IDfCollection result =
-            query.execute(session, IDfQuery.DF_EXECREAD_QUERY);
+        IDfCollection result = query.execute(session, IDfQuery.DF_EXECREAD_QUERY);
         try {
           while (result.next()) {
             String objectId = result.getString("r_object_id");
@@ -972,8 +945,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
             throw e;
           } else {
             // Continue on with a reduced BETWEEN range.
-            logger.log(Level.WARNING, "Processing through group "
-                       + stopObjectId + " after error.", e);
+            logger.log(
+                Level.WARNING, "Processing through group " + stopObjectId + " after error.", e);
           }
         } finally {
           result.close();
@@ -1004,10 +977,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
             objectId = result.getString("r_object_id");
             logger.log(Level.FINE, "Found Group: {0}", groupName);
           }
-          addMemberPrincipal(members, principals,
-              result.getString("users_names"), false);
-          addMemberPrincipal(members, principals,
-              result.getString("groups_names"), true);
+          addMemberPrincipal(members, principals, result.getString("users_names"), false);
+          addMemberPrincipal(members, principals, result.getString("groups_names"), true);
         }
         addGroup(groupName, groups, members, principals);
         groupsCheckpoint = new Checkpoint(stopObjectId);
@@ -1019,29 +990,33 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /** Adds a group and its members to the collection of groups. */
-  private void addGroup(String groupName,
+  private void addGroup(
+      String groupName,
       ImmutableMap.Builder<GroupPrincipal, Collection<Principal>> groupsBuilder,
-      ImmutableSet.Builder<Principal> membersBuilder, Principals principals)
+      ImmutableSet.Builder<Principal> membersBuilder,
+      Principals principals)
       throws DfException {
     if (membersBuilder == null) {
       return;
     }
-    GroupPrincipal groupPrincipal = (GroupPrincipal)
-        principals.getPrincipal(groupName, true);
+    GroupPrincipal groupPrincipal = (GroupPrincipal) principals.getPrincipal(groupName, true);
     if (groupPrincipal == null) {
       return;
     }
     ImmutableSet<Principal> members = membersBuilder.build();
     groupsBuilder.put(groupPrincipal, members);
-    logger.log(Level.FINEST, "Pushing Group {0}: {1}",
-        new Object[] { groupPrincipal.getName(), members });
+    logger.log(
+        Level.FINEST, "Pushing Group {0}: {1}", new Object[] {groupPrincipal.getName(), members});
   }
 
   /** Adds a Principal for a user or group to the set of members. */
-  private void addMemberPrincipal(ImmutableSet.Builder<Principal> members,
-     Principals principals, String memberName, boolean isGroup)
-     throws DfException {
-   if (memberName != null) {
+  private void addMemberPrincipal(
+      ImmutableSet.Builder<Principal> members,
+      Principals principals,
+      String memberName,
+      boolean isGroup)
+      throws DfException {
+    if (memberName != null) {
       Principal principal = principals.getPrincipal(memberName, isGroup);
       if (principal != null) {
         members.add(principal);
@@ -1050,8 +1025,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /** Builds the DQL query to retrieve the groups. */
-  private String makeGroupsQuery(String startObjectId, String stopObjectId,
-      int batchSize) {
+  private String makeGroupsQuery(String startObjectId, String stopObjectId, int batchSize) {
     StringBuilder query = new StringBuilder();
     query.append("SELECT r_object_id");
     if (batchSize == 0) {
@@ -1061,8 +1035,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     boolean hasWhere;
     if (stopObjectId != null) {
       query.append(
-          MessageFormat.format(" WHERE r_object_id BETWEEN ''{0}'' AND ''{1}''",
-          startObjectId, stopObjectId));
+          MessageFormat.format(
+              " WHERE r_object_id BETWEEN ''{0}'' AND ''{1}''", startObjectId, stopObjectId));
       hasWhere = true;
     } else if (startObjectId != null) {
       query.append(" WHERE r_object_id > '").append(startObjectId).append("'");
@@ -1072,7 +1046,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
     // If we have BETWEEN, we already restricted to local groups in range query.
     if (pushLocalGroupsOnly && stopObjectId == null) {
-      query.append(hasWhere ? " AND " : " WHERE ")
+      query
+          .append(hasWhere ? " AND " : " WHERE ")
           .append("(group_source IS NULL OR group_source <> 'LDAP')");
     }
     query.append(" ORDER BY r_object_id");
@@ -1086,8 +1061,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
   @VisibleForTesting
   class DmWorldTraverser extends TraverserTemplate {
-    private ImmutableMap<GroupPrincipal, ImmutableSet<Principal>> dmWorld =
-        null;
+    private ImmutableMap<GroupPrincipal, ImmutableSet<Principal>> dmWorld = null;
     private ImmutableSet.Builder<Principal> members = null;
     private Checkpoint membersCheckpoint;
 
@@ -1103,8 +1077,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected boolean fillCollection(IDfSession session,
-        Principals principals, Checkpoint checkpoint) throws DfException {
+    protected boolean fillCollection(
+        IDfSession session, Principals principals, Checkpoint checkpoint) throws DfException {
       membersCheckpoint = checkpoint;
       String queryStr = makeDmWorldQuery(checkpoint, queryBatchSize);
       logger.log(Level.FINER, "Get dm_world Members Query: {0}", queryStr);
@@ -1129,21 +1103,20 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       if (isComplete) {
         // For a successful completion, reset to full.
         membersCheckpoint = Checkpoint.full();
-        dmWorld = ImmutableMap
-            .of((GroupPrincipal) principals.getPrincipal("dm_world", true),
-                members.build());
+        dmWorld =
+            ImmutableMap.of(
+                (GroupPrincipal) principals.getPrincipal("dm_world", true), members.build());
         members = null;
       }
       return isComplete;
     }
 
     @Override
-    protected Checkpoint pushCollection(DocIdPusher pusher)
-        throws InterruptedException {
+    protected Checkpoint pushCollection(DocIdPusher pusher) throws InterruptedException {
       // Only push the dm_world group if it has been fully formed.
       if (dmWorld != null) {
-        pusher.pushGroupDefinitions(dmWorld, caseSensitivityType
-            == CaseSensitivityType.EVERYTHING_CASE_SENSITIVE);
+        pusher.pushGroupDefinitions(
+            dmWorld, caseSensitivityType == CaseSensitivityType.EVERYTHING_CASE_SENSITIVE);
         dmWorld = null;
       }
       return membersCheckpoint;
@@ -1153,26 +1126,22 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   /** Returns the DQL Query to fetch all users for dm_world magic group. */
   private String makeDmWorldQuery(Checkpoint checkpoint, int batchSize) {
     StringBuilder query = new StringBuilder();
-    query.append("SELECT r_object_id, user_name FROM dm_user")
+    query
+        .append("SELECT r_object_id, user_name FROM dm_user")
         .append(" WHERE user_state = 0 AND")
         .append(" (r_is_group IS NULL OR r_is_group = FALSE)");
     if (checkpoint.getObjectId() != null) {
-      query.append(" AND r_object_id > '")
-          .append(checkpoint.getObjectId())
-          .append("'");
+      query.append(" AND r_object_id > '").append(checkpoint.getObjectId()).append("'");
     }
     query.append(" ORDER BY r_object_id");
     if (batchSize > 0) {
-      query.append(" ENABLE(RETURN_TOP ")
-          .append(batchSize)
-          .append(")");
+      query.append(" ENABLE(RETURN_TOP ").append(batchSize).append(")");
     }
     return query.toString();
   }
 
   @Override
-  public void getModifiedDocIds(DocIdPusher pusher) throws IOException,
-      InterruptedException {
+  public void getModifiedDocIds(DocIdPusher pusher) throws IOException, InterruptedException {
     logger.entering("DocumentumAdaptor", "getModifiedDocIds");
 
     ArrayDeque<DfException> savedExceptions = new ArrayDeque<>();
@@ -1225,18 +1194,16 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected boolean fillCollection(IDfSession dmSession,
-        Principals principals, Checkpoint checkpoint) throws DfException {
+    protected boolean fillCollection(
+        IDfSession dmSession, Principals principals, Checkpoint checkpoint) throws DfException {
       docsCheckpoint = checkpoint;
       return getDocumentUpdates(dmSession);
     }
 
     @Override
-    protected Checkpoint pushCollection(DocIdPusher pusher)
-        throws InterruptedException {
+    protected Checkpoint pushCollection(DocIdPusher pusher) throws InterruptedException {
       List<Record> records = builder.build();
-      logger
-          .log(Level.FINER, "DocumentumAdaptor Modified DocIds: {0}", records);
+      logger.log(Level.FINER, "DocumentumAdaptor Modified DocIds: {0}", records);
       pusher.pushRecords(records);
       return docsCheckpoint;
     }
@@ -1280,27 +1247,22 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected boolean fillCollection(IDfSession dmSession,
-        Principals principals, Checkpoint checkpoint) throws DfException {
+    protected boolean fillCollection(
+        IDfSession dmSession, Principals principals, Checkpoint checkpoint) throws DfException {
       permissionsCheckpoint = checkpoint;
       return getPermissionsUpdates(dmSession);
     }
 
     @Override
-    protected Checkpoint pushCollection(DocIdPusher pusher)
-        throws InterruptedException {
+    protected Checkpoint pushCollection(DocIdPusher pusher) throws InterruptedException {
       List<Record> records = builder.build();
-      logger.log(Level.FINER, "DocumentumAdaptor Modified ACL Links: {0}",
-          records);
+      logger.log(Level.FINER, "DocumentumAdaptor Modified ACL Links: {0}", records);
       pusher.pushRecords(records);
       return permissionsCheckpoint;
     }
 
-    /**
-     * Push Document ACL link updates to GSA.
-     */
-      private boolean getPermissionsUpdates(IDfSession session)
-          throws DfException {
+    /** Push Document ACL link updates to GSA. */
+    private boolean getPermissionsUpdates(IDfSession session) throws DfException {
       String queryStr = makeUpdatedPermissionsQuery(permissionsCheckpoint);
       logger.log(Level.FINER, "Modified permissions query: {0}", queryStr);
       IDfQuery query = dmClientX.getQuery();
@@ -1318,15 +1280,18 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
           String objectName = result.getString("object_name");
 
           if (chronicleIds.contains(chronicleId)) {
-            logger.log(Level.FINEST,
+            logger.log(
+                Level.FINEST,
                 "Skipping already processed event {0} for chronicle ID {1}",
                 new String[] {eventId, chronicleId});
           } else {
-            logger.log(Level.FINER, "Processing permission changes "
-                + "time_stamp_utc: {0}, "
-                + "r_object_id: {1}, "
-                + "audited_obj_id: {2}, "
-                + "chronicle_id: {3}",
+            logger.log(
+                Level.FINER,
+                "Processing permission changes "
+                    + "time_stamp_utc: {0}, "
+                    + "r_object_id: {1}, "
+                    + "audited_obj_id: {2}, "
+                    + "chronicle_id: {3}",
                 new String[] {eventDate, eventId, objectId, chronicleId});
             addUpdatedDocIds(builder, session, chronicleId, objectName);
             chronicleIds.add(chronicleId);
@@ -1341,24 +1306,24 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /**
-   * A document can reside under multiple folder paths.
-   * Only push those paths that are under our start paths.
+   * A document can reside under multiple folder paths. Only push those paths that are under our
+   * start paths.
    *
    * @param builder builder for list of DocIds
    * @param chronicleId the chronicle ID of a Documentum object
-   * @param name the document name to append to the folder
-   *    paths for a document, or null for a folder
+   * @param name the document name to append to the folder paths for a document, or null for a
+   *     folder
    */
-  private void addUpdatedDocIds(ImmutableList.Builder<Record> builder,
-      IDfSession session, String chronicleId, String name) throws DfException {
+  private void addUpdatedDocIds(
+      ImmutableList.Builder<Record> builder, IDfSession session, String chronicleId, String name)
+      throws DfException {
     IDfEnumeration enumPaths = session.getObjectPaths(new DfId(chronicleId));
     while (enumPaths.hasMoreElements()) {
       IDfObjectPath objPath = (IDfObjectPath) enumPaths.nextElement();
       String path = objPath.getFullPath();
       DocId docId = docIdFromPath(path, name, chronicleId);
       if (isUnderStartPath(docId, validatedStartPaths)) {
-        builder.add(new Record.Builder(docId)
-            .setCrawlImmediately(true).build());
+        builder.add(new Record.Builder(docId).setCrawlImmediately(true).build());
       }
     }
   }
@@ -1367,14 +1332,15 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     if (modifiedDocumentsQuery.isEmpty()) {
       return makeModifiedDocumentsDefaultQuery(checkpoint);
     } else {
-      return MessageFormat.format(modifiedDocumentsQuery,
-          checkpoint.getLastModified(), checkpoint.getObjectId());
+      return MessageFormat.format(
+          modifiedDocumentsQuery, checkpoint.getLastModified(), checkpoint.getObjectId());
     }
   }
 
   private String makeModifiedDocumentsDefaultQuery(Checkpoint checkpoint) {
     StringBuilder query = new StringBuilder();
-    query.append("SELECT r_modify_date, r_object_id, i_chronicle_id, ")
+    query
+        .append("SELECT r_modify_date, r_object_id, i_chronicle_id, ")
         .append("object_name, ")
         .append(dateToStringFunction)
         .append("(r_modify_date, 'yyyy-mm-dd hh:mi:ss') ")
@@ -1385,12 +1351,14 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     for (String typeName : validatedDocumentTypes) {
       query.append("TYPE(").append(typeName).append(") OR ");
     }
-    query.append("TYPE(dm_folder)) AND ")
-       .append(MessageFormat.format(
-            "((r_modify_date = DATE(''{0}'',''yyyy-mm-dd hh:mi:ss'') AND "
-            + "r_object_id > ''{1}'') OR (r_modify_date > DATE(''{0}'',"
-            + "''yyyy-mm-dd hh:mi:ss'')))",
-            checkpoint.getLastModified(), checkpoint.getObjectId()));
+    query
+        .append("TYPE(dm_folder)) AND ")
+        .append(
+            MessageFormat.format(
+                "((r_modify_date = DATE(''{0}'',''yyyy-mm-dd hh:mi:ss'') AND "
+                    + "r_object_id > ''{1}'') OR (r_modify_date > DATE(''{0}'',"
+                    + "''yyyy-mm-dd hh:mi:ss'')))",
+                checkpoint.getLastModified(), checkpoint.getObjectId()));
 
     // Limit our search to modified docs under a start path.
     query.append(" AND (FOLDER('");
@@ -1401,7 +1369,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
   private String makeUpdatedPermissionsQuery(Checkpoint checkpoint) {
     StringBuilder query = new StringBuilder();
-    query.append("SELECT ")
+    query
+        .append("SELECT ")
         .append(dateToStringFunction)
         .append("(a.time_stamp_utc, 'yyyy-mm-dd hh:mi:ss') ")
         .append("AS time_stamp_utc_str, ")
@@ -1410,14 +1379,17 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         .append("WHERE a.audited_obj_id = s.r_object_id ")
         .append("AND (FOLDER('");
     Joiner.on("',descend) OR FOLDER('").appendTo(query, validatedStartPaths);
-    query.append("',descend)) ")
+    query
+        .append("',descend)) ")
         .append("AND a.event_name = 'dm_save' AND a.attribute_list ")
         .append("LIKE 'acl_name=%' AND ")
-        .append(MessageFormat.format("((a.time_stamp_utc = DATE(''{0}'', "
-            + "''yyyy-mm-dd hh:mi:ss'') AND (a.r_object_id > ''{1}'')) "
-            + "OR (a.time_stamp_utc > DATE(''{0}'', ''yyyy-mm-dd hh:mi:ss''))) "
-            + "ORDER BY a.time_stamp_utc, a.r_object_id",
-            checkpoint.getLastModified(), checkpoint.getObjectId()));
+        .append(
+            MessageFormat.format(
+                "((a.time_stamp_utc = DATE(''{0}'', "
+                    + "''yyyy-mm-dd hh:mi:ss'') AND (a.r_object_id > ''{1}'')) "
+                    + "OR (a.time_stamp_utc > DATE(''{0}'', ''yyyy-mm-dd hh:mi:ss''))) "
+                    + "ORDER BY a.time_stamp_utc, a.r_object_id",
+                checkpoint.getLastModified(), checkpoint.getObjectId()));
     return query.toString();
   }
 
@@ -1428,8 +1400,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     @Override
-    protected boolean getGroups(IDfSession session, Principals principals)
-        throws DfException {
+    protected boolean getGroups(IDfSession session, Principals principals) throws DfException {
       String queryStr = makeUpdatedGroupsQuery(groupsCheckpoint);
       logger.log(Level.FINER, "Modified Groups Query: {0}", queryStr);
       IDfQuery query = dmClientX.getQuery();
@@ -1451,10 +1422,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
             objectId = result.getString("r_object_id");
             logger.log(Level.FINE, "Found Group: {0}", groupName);
           }
-          addMemberPrincipal(members, principals,
-              result.getString("users_names"), false);
-          addMemberPrincipal(members, principals,
-              result.getString("groups_names"), true);
+          addMemberPrincipal(members, principals, result.getString("users_names"), false);
+          addMemberPrincipal(members, principals, result.getString("groups_names"), true);
         }
         addGroup(groupName, groups, members, principals);
         groupsCheckpoint = new Checkpoint(lastModified, objectId);
@@ -1468,16 +1437,18 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   /** Builds the DQL query to retrieve new and modified groups. */
   private String makeUpdatedGroupsQuery(Checkpoint checkpoint) {
     StringBuilder query = new StringBuilder();
-    query.append("SELECT r_object_id, group_name, groups_names, users_names, ")
+    query
+        .append("SELECT r_object_id, group_name, groups_names, users_names, ")
         .append("r_modify_date, ")
         .append(dateToStringFunction)
         .append("(r_modify_date, 'yyyy-mm-dd hh:mi:ss') ")
         .append("AS r_modify_date_str FROM dm_group WHERE ")
-        .append(MessageFormat.format(
-            "((r_modify_date = DATE(''{0}'',''yyyy-mm-dd hh:mi:ss'') AND "
-            + "r_object_id > ''{1}'') OR (r_modify_date > DATE(''{0}'',"
-            + "''yyyy-mm-dd hh:mi:ss'')))",
-            checkpoint.getLastModified(), checkpoint.getObjectId()));
+        .append(
+            MessageFormat.format(
+                "((r_modify_date = DATE(''{0}'',''yyyy-mm-dd hh:mi:ss'') AND "
+                    + "r_object_id > ''{1}'') OR (r_modify_date > DATE(''{0}'',"
+                    + "''yyyy-mm-dd hh:mi:ss'')))",
+                checkpoint.getLastModified(), checkpoint.getObjectId()));
     if (pushLocalGroupsOnly) {
       query.append(" AND (group_source IS NULL OR group_source <> 'LDAP')");
     }
@@ -1485,7 +1456,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     return query.toString();
   }
 
-  /** Gives the bytes of a document referenced with id. 
+  /**
+   * Gives the bytes of a document referenced with id.
    *
    * @throws IOException if a Documentum error occurs
    */
@@ -1515,11 +1487,12 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       if (path.matches(".*:\\p{XDigit}{16}")) {
         String chronicleId = path.substring(path.length() - 16);
         logger.log(Level.FINER, "Chronicle ID: {0}", chronicleId);
-        sysObject = (IDfSysObject) dmSession.getObjectByQualification(
-            "dm_sysobject where i_chronicle_id = '" + chronicleId + "'");
+        sysObject =
+            (IDfSysObject)
+                dmSession.getObjectByQualification(
+                    "dm_sysobject where i_chronicle_id = '" + chronicleId + "'");
         if (sysObject != null) {
-          boolean pathMatches =
-              matchObjectPathsToDocId(id, dmSession, sysObject);
+          boolean pathMatches = matchObjectPathsToDocId(id, dmSession, sysObject);
           if (!pathMatches) {
             logger.log(Level.FINER, "Object paths do not match DocId: {0}", id);
             resp.respondNotFound();
@@ -1533,8 +1506,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
           DocId newId = docIdWithObjectId(id, sysObject.getObjectId());
           logger.log(Level.FINE, "New location: {0}", newId);
           if (!context.getAsyncDocIdPusher().pushDocId(newId)) {
-            throw new IllegalStateException(MessageFormat.format(
-                "Failed to feed new DocId: {0}", newId));
+            throw new IllegalStateException(
+                MessageFormat.format("Failed to feed new DocId: {0}", newId));
           }
           resp.respondNotFound();
           return;
@@ -1549,8 +1522,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
       IDfId dmObjId = sysObject.getObjectId();
       IDfType type = sysObject.getType();
-      logger.log(Level.FINER, "Object Id: {0}; Type: {1}",
-          new Object[] {dmObjId, type.getName()});
+      logger.log(Level.FINER, "Object Id: {0}; Type: {1}", new Object[] {dmObjId, type.getName()});
 
       Date lastModified = sysObject.getTime("r_modify_date").getDate();
       resp.setLastModified(lastModified);
@@ -1561,14 +1533,13 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         // To avoid issues with time zones, we only count an object as
         // unmodified if its last modified time is more than a day before
         // the last crawl time.
-        boolean respondNoContent = (lastModified != null)
-            && req.canRespondWithNoContent(
-                new Date(lastModified.getTime() + ONE_DAY_MILLIS));
+        boolean respondNoContent =
+            (lastModified != null)
+                && req.canRespondWithNoContent(new Date(lastModified.getTime() + ONE_DAY_MILLIS));
 
         getDocumentContent(resp, sysObject, id, !respondNoContent);
         if (respondNoContent) {
-          logger.log(Level.FINER,
-              "Content not modified since last crawl: {0}", dmObjId);
+          logger.log(Level.FINER, "Content not modified since last crawl: {0}", dmObjId);
           resp.respondNoContent();
         }
       } else {
@@ -1591,8 +1562,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
    *
    * @throws DfException
    */
-  private boolean matchObjectPathsToDocId(DocId id, IDfSession dmSession,
-      IDfSysObject sysObject) throws DfException {
+  private boolean matchObjectPathsToDocId(DocId id, IDfSession dmSession, IDfSysObject sysObject)
+      throws DfException {
     String docIdPath = docIdToPath(id);
     String name = sysObject.getObjectName();
     int index = docIdPath.lastIndexOf("/" + name.replace("/", "%2F"));
@@ -1601,13 +1572,11 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
     String path = docIdPath.substring(0, index);
     if (path.isEmpty()
-        && sysObject.getObjectId().toString()
-            .regionMatches(true, 0, DM_CABINET_TAG, 0, 2)) {
+        && sysObject.getObjectId().toString().regionMatches(true, 0, DM_CABINET_TAG, 0, 2)) {
       return true;
     }
 
-    IDfEnumeration enumPaths =
-        dmSession.getObjectPaths(sysObject.getObjectId());
+    IDfEnumeration enumPaths = dmSession.getObjectPaths(sysObject.getObjectId());
     while (enumPaths.hasMoreElements()) {
       IDfObjectPath objectPath = (IDfObjectPath) enumPaths.nextElement();
       if (path.equals(objectPath.getFullPath())) {
@@ -1618,8 +1587,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /**
-   * Returns {@code true} if the supplied {@code DocId} is under one of the
-   * validated {@code startPaths}, {@code false} otherwise.
+   * Returns {@code true} if the supplied {@code DocId} is under one of the validated {@code
+   * startPaths}, {@code false} otherwise.
    *
    * @param docId a DocId representing a document
    * @param startPaths a List of normalized start paths
@@ -1647,11 +1616,9 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /**
-   * Returns all the docbase's cabinets as links in a generated HTML document
-   * and as external links.
+   * Returns all the docbase's cabinets as links in a generated HTML document and as external links.
    */
-  private void getRootContent(Response resp, DocId id, List<DocId> cabinets)
-      throws IOException {
+  private void getRootContent(Response resp, DocId id, List<DocId> cabinets) throws IOException {
     Iterator<DocId> iterator = cabinets.iterator();
     resp.setNoIndex(true);
     // Large Documentum deployments can have tens or hundreds of thousands
@@ -1663,7 +1630,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     SharedByteArrayOutputStream htmlOut = new SharedByteArrayOutputStream();
     Writer writer = new OutputStreamWriter(htmlOut, CHARSET);
     try (HtmlResponseWriter htmlWriter =
-         new HtmlResponseWriter(writer, docIdEncoder, Locale.ENGLISH)) {
+        new HtmlResponseWriter(writer, docIdEncoder, Locale.ENGLISH)) {
       htmlWriter.start(id, "/");
       for (int i = 0; i < maxHtmlSize && iterator.hasNext(); i++) {
         DocId docid = iterator.next();
@@ -1683,10 +1650,13 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     IOHelper.copyStream(htmlOut.getInputStream(), resp.getOutputStream());
   }
 
-  /** Copies the Documentum document content into the response.
-   * @throws URISyntaxException */
-  private void getDocumentContent(Response resp, IDfSysObject sysObject,
-      DocId id, boolean returnContent)
+  /**
+   * Copies the Documentum document content into the response.
+   *
+   * @throws URISyntaxException
+   */
+  private void getDocumentContent(
+      Response resp, IDfSysObject sysObject, DocId id, boolean returnContent)
       throws DfException, IOException, URISyntaxException {
     if (!markAllDocsAsPublic) {
       getACL(resp, sysObject, id);
@@ -1700,15 +1670,29 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
 
     // Return the content.
-    resp.setDisplayUrl(new URI(MessageFormat.format(displayUrl,
-        sysObject.getObjectId(), docIdToPath(id))));
+    resp.setDisplayUrl(
+        new URI(MessageFormat.format(displayUrl, sysObject.getObjectId(), docIdToPath(id))));
 
-    if (returnContent) {
+    boolean hasPdfocrRendition =
+        hasPDFOCRRendition(sysObject.getObjectSession(), sysObject.getObjectId().toString());
+    if (hasPdfocrRendition) {
+      if (logger.isLoggable(Level.FINER)) {
+        logger.log(
+            Level.FINER,
+            "Get document pdfocr rendition content for : {0}",
+            sysObject.getObjectId().toString());
+      }
+      try(InputStream inStream = sysObject.getContentEx("pdfocr",0)) {
+        IOHelper.copyStream(inStream, resp.getOutputStream());
+        resp.setContentType("pdfocr");
+      }
+    } else if (returnContent) {
       // getContent throws an exception when r_page_cnt is zero.
       // The GSA does not support files larger than 2 GB.
       // The GSA will not index empty documents with binary content types,
       // so include the content type only when supplying content.
-      if (sysObject.getPageCount() > 0 && sysObject.getContentSize() > 0
+      if (sysObject.getPageCount() > 0
+          && sysObject.getContentSize() > 0
           && sysObject.getContentSize() <= (2L << 30)) {
         String contentType = sysObject.getFormat().getMIMEType();
         logger.log(Level.FINER, "Content Type: {0}", contentType);
@@ -1725,10 +1709,12 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
   }
 
-  /** Supplies the document ACL in the response.
-   * @throws DfException */
-  private void getACL(Response resp, IDfSysObject sysObject, DocId id)
-      throws DfException {
+  /**
+   * Supplies the document ACL in the response.
+   *
+   * @throws DfException
+   */
+  private void getACL(Response resp, IDfSysObject sysObject, DocId id) throws DfException {
     String aclId = sysObject.getACL().getObjectId().toString();
     logger.log(Level.FINER, "ACL for id {0} is {1}", new Object[] {id, aclId});
     resp.setAcl(new Acl.Builder().setInheritFrom(new DocId(aclId)).build());
@@ -1746,9 +1732,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
           continue;
         } else if ("r_object_type".equals(name)) {
           // Retrieves object type and its super type(s).
-          for (IDfType type = sysObject.getType();
-               type != null;
-               type = getSuperType(type)) {
+          for (IDfType type = sysObject.getType(); type != null; type = getSuperType(type)) {
             resp.addMetadata(name, type.getName());
           }
           continue;
@@ -1758,8 +1742,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
         for (int i = 0; i < count; i++) {
           String value = sysObject.getRepeatingString(name, i);
           if (value != null) {
-            logger.log(Level.FINEST, "Attribute: {0} = {1}",
-                new Object[] { name, value });
+            logger.log(Level.FINEST, "Attribute: {0} = {1}", new Object[] {name, value});
             resp.addMetadata(name, value);
           }
         }
@@ -1771,8 +1754,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   // TODO(bmj): Cache this set, keyed of the objectType, filtered of
   // excluded attrs. The set of metadata is the same for all items
   // of a specific type.
-  private Set<String> getAttributeNames(IDfSysObject sysObject)
-      throws DfException {
+  private Set<String> getAttributeNames(IDfSysObject sysObject) throws DfException {
     @SuppressWarnings("unchecked")
     Enumeration<IDfAttr> e = sysObject.enumAttrs();
     ImmutableSet.Builder<String> builder = ImmutableSet.builder();
@@ -1784,8 +1766,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /**
-   * Return the supertype for the supplied type. Caches result to
-   * avoid frequent round-trips to server.
+   * Return the supertype for the supplied type. Caches result to avoid frequent round-trips to
+   * server.
    *
    * @return superType for supplied type, or null if type is root type.
    */
@@ -1804,8 +1786,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
   }
 
   /** Supplies VDoc children as external link metadata in the response. */
-  private void getVdocChildLinks(Response resp, IDfSysObject sysObject,
-      DocId id) throws DfException, IOException {
+  private void getVdocChildLinks(Response resp, IDfSysObject sysObject, DocId id)
+      throws DfException, IOException {
     IDfVirtualDocument vDoc = sysObject.asVirtualDocument("CURRENT", false);
     IDfVirtualDocumentNode root = vDoc.getRootNode();
     int count = root.getChildCount();
@@ -1813,17 +1795,21 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       IDfSysObject child = root.getChild(i).getSelectedObject();
       String chronicleId = child.getString("i_chronicle_id");
       String objName = child.getString("object_name");
-      logger.log(Level.FINER, "VDoc Child chronicle ID: {0}; Name: {1}",
+      logger.log(
+          Level.FINER,
+          "VDoc Child chronicle ID: {0}; Name: {1}",
           new Object[] {chronicleId, objName});
       DocId childDocId = docIdFromPath(docIdToPath(id), objName, chronicleId);
-      logger.log(Level.FINER, "VDoc Child Object DocId: {0}",
-          childDocId.toString());
+      logger.log(Level.FINER, "VDoc Child Object DocId: {0}", childDocId.toString());
       resp.addAnchor(docIdEncoder.encodeDocId(childDocId), objName);
     }
   }
 
-  /** Returns the Folder's contents as links in a generated HTML document.
-   * @throws URISyntaxException */
+  /**
+   * Returns the Folder's contents as links in a generated HTML document.
+   *
+   * @throws URISyntaxException
+   */
   private void getFolderContent(Response resp, IDfFolder dmFolder, DocId id)
       throws DfException, IOException, URISyntaxException {
     resp.setNoIndex(!indexFolders);
@@ -1833,13 +1819,11 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
     // Include folder attributes as metadata.
     getMetadata(resp, dmFolder, id);
-    resp.setDisplayUrl(new URI(MessageFormat.format(displayUrl,
-        dmFolder.getObjectId(), docIdToPath(id))));
+    resp.setDisplayUrl(
+        new URI(MessageFormat.format(displayUrl, dmFolder.getObjectId(), docIdToPath(id))));
 
-    logger.log(Level.FINER, "Listing contents of folder: {0} ",
-        dmFolder.getObjectName());
-    IDfCollection dmCollection =
-        dmFolder.getContents("i_chronicle_id, object_name");
+    logger.log(Level.FINER, "Listing contents of folder: {0} ", dmFolder.getObjectName());
+    IDfCollection dmCollection = dmFolder.getContents("i_chronicle_id, object_name");
 
     // TODO(bmj): Use maxHtmlSize in getFolderContent.
     try (HtmlResponseWriter htmlWriter = createHtmlResponseWriter(resp)) {
@@ -1847,8 +1831,8 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
       while (dmCollection.next()) {
         String chronicleId = dmCollection.getString("i_chronicle_id");
         String objName = dmCollection.getString("object_name");
-        logger.log(Level.FINER, "Chronicle ID: {0}; Name: {1}",
-            new Object[] {chronicleId, objName});
+        logger.log(
+            Level.FINER, "Chronicle ID: {0}; Name: {1}", new Object[] {chronicleId, objName});
         DocId childDocId = docIdFromPath(docIdToPath(id), objName, chronicleId);
         htmlWriter.addLink(childDocId, objName);
       }
@@ -1862,8 +1846,7 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
     }
   }
 
-  private HtmlResponseWriter createHtmlResponseWriter(Response response)
-      throws IOException {
+  private HtmlResponseWriter createHtmlResponseWriter(Response response) throws IOException {
     response.setContentType("text/html; charset=" + CHARSET.name());
     Writer writer = new OutputStreamWriter(response.getOutputStream(), CHARSET);
     // TODO(ejona): Get locale from request.
@@ -1872,17 +1855,14 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
   /**
    * Establishes connection DFC.
-   * 
+   *
    * @param context the Adaptor Context
-   * @return a new DFC session manager for the configured username and
-   *         docbaseName
-   * @throws DfException if error in getting local client or error in setting 
-   *         repository identity, or error in getting session, or error in 
-   *         getting server version.
+   * @return a new DFC session manager for the configured username and docbaseName
+   * @throws DfException if error in getting local client or error in setting repository identity,
+   *     or error in getting session, or error in getting server version.
    */
   private IDfSessionManager initDfc(AdaptorContext context) throws DfException {
-    IDfSessionManager dmSessionManager =
-        dmClientX.getLocalClient().newSessionManager();
+    IDfSessionManager dmSessionManager = dmClientX.getLocalClient().newSessionManager();
 
     Config config = context.getConfig();
     String username = config.getValue("documentum.username");
@@ -1892,22 +1872,43 @@ public class DocumentumAdaptor extends AbstractAdaptor implements
 
     IDfLoginInfo dmLoginInfo = dmClientX.getLoginInfo();
     dmLoginInfo.setUser(username);
-    dmLoginInfo.setPassword(context.getSensitiveValueDecoder()
-        .decodeValue(config.getValue("documentum.password")));
+    dmLoginInfo.setPassword(
+        context.getSensitiveValueDecoder().decodeValue(config.getValue("documentum.password")));
     dmSessionManager.setIdentity(docbaseName, dmLoginInfo);
 
     IDfSession dmSession = dmSessionManager.getSession(docbaseName);
     try {
-      logger.log(Level.INFO, "DFC {0} connected to Content Server {1}",
-          new Object[]
-              { dmClientX.getDFCVersion(), dmSession.getServerVersion() });
-      logger.log(Level.INFO, "Created a new session for the docbase {0}",
-          docbaseName);
+      logger.log(
+          Level.INFO,
+          "DFC {0} connected to Content Server {1}",
+          new Object[] {dmClientX.getDFCVersion(), dmSession.getServerVersion()});
+      logger.log(Level.INFO, "Created a new session for the docbase {0}", docbaseName);
     } finally {
       logger.log(Level.INFO, "Releasing dfc session for {0}", docbaseName);
       dmSessionManager.release(dmSession);
     }
 
     return dmSessionManager;
+  }
+
+  private boolean hasPDFOCRRendition(IDfSession session, String id) throws DfException {
+    IDfQuery query = dmClientX.getQuery();
+    String queryStr =
+        MessageFormat.format(
+	    		"SELECT r_object_id  FROM dmr_content WHERE any parent_id=''{0}'' and full_format=''pdfocr'' and rendition>0",id);
+    logger.log(
+        Level.FINER,
+        "Checking if document Object Id: {0}; has a pdfocr rendition query:'{1}'",
+        new Object[] {id, queryStr});
+    query.setDQL(queryStr);
+    IDfCollection result = query.execute(session, IDfQuery.DF_EXECREAD_QUERY);
+    try {
+      if (result.next()) {
+        return true;
+      }
+      return false;
+    } finally {
+      result.close();
+    }
   }
 }
